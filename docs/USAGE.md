@@ -17,10 +17,22 @@ Press `Escape` to return to timer controls.
 
 Keep the generated session name or edit the **Session name** field before
 starting. Names use letters, numbers, and hyphens; spaces become hyphens.
-Session names are unique. Work blocks and breaks keep the same session name,
-including after reopening the app. Press `Ctrl+N` to explicitly start a new
-session, or edit the name before the next block. Each block retains its own
-timer, reflection, and recovery checkpoint.
+Session names are unique. Press `Ctrl+N` to explicitly start a new session, or
+edit the name before the next block. Each block retains its own timer,
+reflection, and recovery checkpoint.
+
+### Named sessions and blocks
+
+A **named session** is the label a run of work belongs to; a **block** is one
+timed piece inside it. One named session usually holds several blocks: a focus
+block, its short break, the next focus block. Work blocks and breaks keep the
+same session name, including after reopening the app, so the history reads as
+one sitting rather than as loose timers.
+
+That split is what makes `--resume` and the weekly review useful: `--resume`
+reopens a specific block by its session name, while the review totals every
+block that shares a name. To start a fresh run instead of continuing one, press
+`Ctrl+N` or edit the name before the next block.
 
 Choose Focus, Short, Long, or a custom duration, then press `Space`. New focus
 and custom blocks ask you to choose a scope, reuse the previous scope, or
@@ -49,7 +61,18 @@ breadcrumbs --name my-reading-block
 ```
 
 `--session NAME` is an alias for `--resume NAME`. Recovery opens paused at the
-last checkpoint. Time spent outside Breadcrumbs is not counted as work. A sudden
+last checkpoint.
+
+To pick up a named session from the terminal, name it once and resume it later:
+
+```powershell
+# start a run called "thesis-chapter-3"
+breadcrumbs --name thesis-chapter-3
+
+# list what is resumable, then reopen that run
+breadcrumbs sessions
+breadcrumbs --resume thesis-chapter-3
+``` Time spent outside Breadcrumbs is not counted as work. A sudden
 shutdown may lose roughly the final second of timer progress.
 
 ## Presets and early finishes
