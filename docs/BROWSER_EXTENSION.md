@@ -41,6 +41,27 @@ the timer's capture gate. **Stop sharing** sends an empty foreground update and
 stops browser tab reports. **Disconnect** also removes the saved URL and
 token. Tokens are stored in `chrome.storage.local`, never browser sync.
 
+## Troubleshoot with `doctor`
+
+When context shows as Unknown, or the extension cannot see the timer, run:
+
+```powershell
+breadcrumbs doctor
+breadcrumbs doctor --json
+```
+
+It prints a read-only report of what this machine can actually do: the
+Breadcrumbs version, Python and OS, which native capture backend is available,
+whether the bridge port is listening, and whether a paired extension is
+connected. It also tells apart the cases that look the same from the UI — an
+unsupported platform, tracking turned off in settings, an extension that is not
+paired, and one that is paired but silent right now.
+
+The report never contains pairing tokens, page titles, URLs, project paths,
+process command lines or stored session content, so it is safe to paste into an
+issue. `--json` prints the same data under a versioned schema
+(`schema_version: 1`).
+
 ## Control the current block
 
 The popup and options page show a **Current block** card separately from

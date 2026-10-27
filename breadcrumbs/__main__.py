@@ -17,6 +17,20 @@ def build_parser() -> argparse.ArgumentParser:
     session.add_argument("--name", metavar="NAME", help="Name a new block")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sessions", help="List resumable saved blocks")
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Report measured capabilities for troubleshooting",
+        description=(
+            "Print a read-only capability report: version, Python and OS, which capture "
+            "backend this machine can run, whether the bridge is listening and whether a "
+            "paired extension is connected. The report never includes pairing tokens, page "
+            "titles, URLs, project paths or session content, so it is safe to paste into an "
+            "issue."
+        ),
+        epilog="Examples:\n  breadcrumbs doctor\n  breadcrumbs doctor --json",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    doctor.add_argument("--json", action="store_true", help="print the report as JSON instead of text")
     browser = subparsers.add_parser("browser", help="Set up the bundled browser extension")
     browser.add_argument("action", choices=("path", "setup", "repair"), default="setup", nargs="?")
     export = subparsers.add_parser("export", help="Export local activity as JSON or CSV")
@@ -100,6 +114,18 @@ def main() -> None:
     args = parser.parse_args()
     if args.command and (args.resume or args.name):
         parser.error("Use --resume or --name when opening the timer, without a subcommand.")
+    if args.command == "doctor":
+        import json as json_module
+
+        from .config import Settings
+        from .doctor import build_report, format_report
+
+        report = build_report(Settings.load())
+        if args.json:
+            print(json_module.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(format_report(report))
+        return
     if args.command == "sessions":
         from .db import Database
 
