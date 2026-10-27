@@ -13,7 +13,7 @@ before taking it so people do not duplicate work.
 | [#12](https://github.com/SaroashDS/Breadcrumbs/issues/12) | Export and browser help text | Good first issue · descriptions, examples and parser assertions |
 | [#3](https://github.com/SaroashDS/Breadcrumbs/issues/3) | Local weekly review | Help wanted · SQLite aggregation and local-week boundaries |
 | [#8](https://github.com/SaroashDS/Breadcrumbs/issues/8) | Privacy-safe `doctor` command | Help wanted · measured capabilities without tokens or personal context |
-| [#4](https://github.com/SaroashDS/Breadcrumbs/issues/4) | Optional VS Code workspace context | Help wanted · small authenticated protocol proposal |
+| [#4](https://github.com/SaroashDS/Breadcrumbs/issues/4) | Optional VS Code workspace context | Help wanted · protocol proposal in [docs/VSCODE_WORKSPACE_PROPOSAL.md](VSCODE_WORKSPACE_PROPOSAL.md) |
 | [#1](https://github.com/SaroashDS/Breadcrumbs/issues/1) | Native macOS app capture | Help wanted · platform integration and permission boundaries |
 | [#2](https://github.com/SaroashDS/Breadcrumbs/issues/2) | One tested Wayland compositor | Help wanted · compositor-specific capability detection |
 
