@@ -17,11 +17,57 @@ def build_parser() -> argparse.ArgumentParser:
     session.add_argument("--name", metavar="NAME", help="Name a new block")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sessions", help="List resumable saved blocks")
-    browser = subparsers.add_parser("browser", help="Set up the bundled browser extension")
-    browser.add_argument("action", choices=("path", "setup", "repair"), default="setup", nargs="?")
-    export = subparsers.add_parser("export", help="Export local activity as JSON or CSV")
-    export.add_argument("--limit", type=int, default=None)
-    export.add_argument("--output", type=Path, default=None)
+    browser = subparsers.add_parser(
+        "browser",
+        help="Set up the bundled browser extension",
+        description=(
+            "Work with the bundled browser extension: 'path' prints the folder to load, "
+            "'setup' explains how to load it, 'repair' reinstalls it."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  breadcrumbs browser path\n"
+            "  breadcrumbs browser setup\n"
+            "  breadcrumbs browser repair"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    browser.add_argument(
+        "action",
+        choices=("path", "setup", "repair"),
+        default="setup",
+        nargs="?",
+        help="path prints the extension folder, setup explains loading it, repair reinstalls it (default: setup)",
+    )
+    export = subparsers.add_parser(
+        "export",
+        help="Export local activity as JSON or CSV",
+        description=(
+            "Export recorded blocks to stdout, or to --output when given. The default "
+            "JSON export contains session summaries; --activity adds the recorded focus "
+            "context and spans."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  breadcrumbs export\n"
+            "  breadcrumbs export --limit 20\n"
+            "  breadcrumbs export --activity --output activity.json\n"
+            "  breadcrumbs export --format csv --output sessions.csv"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    export.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="export only the most recent N blocks (default: all blocks)",
+    )
+    export.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="write the export to this file instead of stdout",
+    )
     export.add_argument("--activity", action="store_true", help="Explicitly include recorded focus context and spans")
     export.add_argument("--format", choices=("json", "csv"), default="json", help="csv exports session summaries only")
     update = subparsers.add_parser("update", help="Update Breadcrumbs from its latest GitHub release")

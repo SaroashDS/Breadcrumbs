@@ -315,6 +315,35 @@ def test_resume_cli_alias_and_naming_flags():
         parser.parse_args(["--resume", "one", "--name", "two"])
 
 
+def test_export_and_browser_help_explain_defaults_and_examples():
+    from breadcrumbs.__main__ import build_parser
+
+    parser = build_parser()
+    actions = {action.dest: action for action in parser._subparsers._group_actions}
+    export = actions["command"].choices["export"]
+    browser = actions["command"].choices["browser"]
+
+    export_help = export.format_help()
+    assert "stdout" in export_help
+    assert "session summaries" in export_help
+    assert "--activity" in export_help
+    assert "breadcrumbs export --limit 20" in export_help
+    assert "breadcrumbs export --format csv" in export_help
+
+    browser_help = browser.format_help()
+    assert "path prints the extension folder" in browser_help
+    assert "repair reinstalls it" in browser_help
+    assert "breadcrumbs browser setup" in browser_help
+
+    # The flags and their defaults keep working as before.
+    parsed = parser.parse_args(["export", "--limit", "5", "--output", "out.json"])
+    assert parsed.limit == 5
+    assert str(parsed.output) == "out.json"
+    assert parsed.format == "json"
+    assert parser.parse_args(["export"]).limit is None
+    assert parser.parse_args(["browser"]).action == "setup"
+
+
 def test_previous_two_column_layout_and_labeled_name_field(tmp_path, monkeypatch):
     from textual.widgets import Input
 
