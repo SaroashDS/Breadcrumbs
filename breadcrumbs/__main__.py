@@ -17,6 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     session.add_argument("--name", metavar="NAME", help="Name a new block")
     subparsers = parser.add_subparsers(dest="command")
     subparsers.add_parser("sessions", help="List resumable saved blocks")
+    review = subparsers.add_parser("review", help="Summarise one local week of completed work")
+    review.add_argument("--week", metavar="YYYY-MM-DD", default=None, help="any date in the week to review (default: today)")
+    review.add_argument("--activity", action="store_true", help="Include recorded activity-label totals")
     browser = subparsers.add_parser("browser", help="Set up the bundled browser extension")
     browser.add_argument("action", choices=("path", "setup", "repair"), default="setup", nargs="?")
     export = subparsers.add_parser("export", help="Export local activity as JSON or CSV")
@@ -129,6 +132,46 @@ def main() -> None:
         return
     if args.command == "update":
         handle_update(check=args.check, status=args.status, assume_yes=args.yes)
+        return
+    if args.command == "review":
+        from datetime import date
+
+        from .db import Database
+
+        if args.week:
+            try:
+                anchor = date.fromisoformat(args.week)
+            except ValueError:
+                parser.error("--week expects a date like 2026-10-20.")
+        else:
+            anchor = date.today()
+        database = Database()
+        try:
+            summary = database.weekly_review(anchor, include_activity=args.activity)
+        finally:
+            database.close()
+        print(f"Week of {summary['week_start'][:10]} to {summary['week_end'][:10]}")
+        if summary["completed"] == 0 and summary["blocks"] == 0:
+            print("No completed work this week.")
+        print(f"Work: {summary['seconds'] // 60}m across {summary['completed']} completed blocks")
+        print(
+            f"Blocks started: {summary['blocks']}"
+            f"  ·  early finished: {summary['early_finished']}"
+            f"  ·  abandoned: {summary['abandoned']}"
+        )
+        for session in summary["sessions"]:
+            if session["completed"] == 0:
+                continue
+            print(
+                f"  {session['name']}: {session['seconds'] // 60}m"
+                f" ({session['completed']}/{session['blocks']} completed)"
+            )
+        if args.activity:
+            labels = summary["activity_seconds"]
+            if not labels:
+                print("No recorded activity labels this week.")
+            for label, seconds in sorted(labels.items(), key=lambda item: -item[1]):
+                print(f"  {label}: {seconds // 60}m")
         return
     if args.command == "export":
         from .db import Database

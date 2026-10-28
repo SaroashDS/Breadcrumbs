@@ -127,11 +127,24 @@ The header shows focus minutes and completed focus blocks for sessions started
 today, using the machine's local date. Breaks are excluded.
 
 ```powershell
+breadcrumbs review
+breadcrumbs review --week 2026-10-20
+breadcrumbs review --week 2026-10-20 --activity
 breadcrumbs export
 breadcrumbs export --limit 20
 breadcrumbs export --output activity.json
 breadcrumbs export --format csv --output sessions.csv
 ```
+
+`review` prints a read-only summary for one local week: work minutes, completed
+and early-finished blocks, abandoned attempts, and per-session totals. A week
+runs from Monday 00:00 to the next Monday 00:00 in the machine's local timezone,
+so it follows local calendar days across a daylight-saving change. `--week`
+accepts any date inside the week and defaults to the current week. A block counts
+toward the week it started in, even when it ends after midnight. Breaks never
+count as work, and early-finished work keeps the time that was actually recorded.
+Activity labels stay out of the report unless you pass `--activity`; nothing is
+inferred for context that was never recorded.
 
 If the output path cannot be written, the command prints an error and exits with
 status 1. Create the parent directory or choose a writable destination, then
