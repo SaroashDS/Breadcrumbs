@@ -244,31 +244,41 @@ def test_linux_marker_uses_owned_tty_title_stack_and_restores_without_reading_in
     import stat
 
     writes, closes = [], []
-    monkeypatch.setattr(helper, "process_identity", lambda pid: "birth")
-    monkeypatch.setattr(helper, "_linux_tty", lambda pid: "/dev/pts/77")
-    monkeypatch.setattr(helper, "_xterm_ancestry", lambda pid: True)
-    monkeypatch.setattr(helper, "_foreground_job", lambda pid: True)
-    monkeypatch.setattr(helper, "discover_agents", lambda: [{"pid": 7, "tty": "/dev/pts/77"}])
-    monkeypatch.setattr(helper.os, "geteuid", lambda: 1000, raising=False)
-    monkeypatch.setattr(helper.os, "major", lambda value: 136, raising=False)
-    monkeypatch.setattr(helper.os, "minor", lambda value: 77, raising=False)
-    monkeypatch.setattr(helper.os, "O_NOCTTY", 0, raising=False)
-    monkeypatch.setattr(helper.os, "O_NONBLOCK", 0, raising=False)
-    monkeypatch.setattr(helper.os, "open", lambda path, flags: 77)
-    monkeypatch.setattr(helper.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFCHR, st_uid=1000, st_rdev=77))
-    monkeypatch.setattr(helper.os, "write", lambda fd, data: writes.append(data) or len(data))
-    monkeypatch.setattr(helper.os, "close", closes.append)
-    marker = helper.LinuxTTYMarker(7, "birth", "a" * 24)
-    marker.activate()
-    assert writes[0] == b"\x1b[22;2t"
-    assert b"[breadcrumbs:" in writes[1]
-    assert marker.console_key == "linux-tty:136:77"
-    marker.restore()
-    assert writes[-1] == b"\x1b[23;2t"
-    count = len(writes)
-    marker.close()
-    assert len(writes) == count
-    assert closes == [77]
+    # Patching attributes on the shared os module leaks the fakes into pytest's
+    # own teardown (its capture fixtures call os.fstat and read st_size).
+    # Swap in a module-local stand-in that delegates to the real os instead,
+    # and restore the real module before monkeypatch undo runs.
+    real_os = helper.os
+    fake_os = SimpleNamespace(**{name: getattr(real_os, name) for name in dir(real_os)})
+    fake_os.geteuid = lambda: 1000
+    fake_os.major = lambda value: 136
+    fake_os.minor = lambda value: 77
+    fake_os.O_NOCTTY = 0
+    fake_os.O_NONBLOCK = 0
+    fake_os.open = lambda path, flags: 77
+    fake_os.fstat = lambda fd: SimpleNamespace(st_mode=stat.S_IFCHR, st_uid=1000, st_rdev=77)
+    fake_os.write = lambda fd, data: writes.append(data) or len(data)
+    fake_os.close = closes.append
+    helper.os = fake_os
+    try:
+        monkeypatch.setattr(helper, "process_identity", lambda pid: "birth")
+        monkeypatch.setattr(helper, "_linux_tty", lambda pid: "/dev/pts/77")
+        monkeypatch.setattr(helper, "_xterm_ancestry", lambda pid: True)
+        monkeypatch.setattr(helper, "_foreground_job", lambda pid: True)
+        monkeypatch.setattr(helper, "discover_agents", lambda: [{"pid": 7, "tty": "/dev/pts/77"}])
+        marker = helper.LinuxTTYMarker(7, "birth", "a" * 24)
+        marker.activate()
+        assert writes[0] == b"\x1b[22;2t"
+        assert b"[breadcrumbs:" in writes[1]
+        assert marker.console_key == "linux-tty:136:77"
+        marker.restore()
+        assert writes[-1] == b"\x1b[23;2t"
+        count = len(writes)
+        marker.close()
+        assert len(writes) == count
+        assert closes == [77]
+    finally:
+        helper.os = real_os
 
 
 def test_unverified_linux_terminal_is_rejected_before_opening_any_tty(monkeypatch):
