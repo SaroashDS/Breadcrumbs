@@ -5,7 +5,7 @@ import io
 import json
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -450,6 +450,65 @@ class Database:
             (start,),
         ).fetchone()
         return {"seconds": int(row["seconds"]), "blocks": int(row["blocks"])}
+
+    def week_bounds(self, anchor: date, tz: timezone | None = None) -> tuple[datetime, datetime]:
+        """Return the local-time Monday 00:00 and next Monday 00:00 around anchor.
+
+        ``tz`` defaults to the machine's local timezone; pass an explicit
+        timezone (e.g. a DST-observing one) for deterministic boundary checks.
+        """
+        local_monday = anchor - timedelta(days=anchor.weekday())
+        start = datetime.combine(local_monday, datetime.min.time())
+        end = datetime.combine(local_monday + timedelta(days=7), datetime.min.time())
+        if tz is None:
+            return start.astimezone(), end.astimezone()
+        return start.replace(tzinfo=tz), end.replace(tzinfo=tz)
+
+    def weekly_review(self, anchor: date, include_activity: bool = False, tz: timezone | None = None) -> dict[str, Any]:
+        start, end = self.week_bounds(anchor, tz)
+        start_iso = start.astimezone(timezone.utc).isoformat(timespec="seconds")
+        end_iso = end.astimezone(timezone.utc).isoformat(timespec="seconds")
+        rows = [dict(row) for row in self.connection.execute(
+            """SELECT * FROM sessions
+               WHERE started_at >= ? AND started_at < ?
+               ORDER BY started_at ASC, id ASC""",
+            (start_iso, end_iso),
+        ).fetchall()]
+        work = [row for row in rows if row["timer_kind"] in ("focus", "custom")]
+        completed = [row for row in work if row["status"] == "completed"]
+        early = [row for row in completed if row.get("completion_reason") == "early"]
+        sessions: dict[int, dict[str, Any]] = {}
+        for row in work:
+            identity = self.session_identity(row["id"])
+            entry = sessions.setdefault(identity[0], {
+                "name": identity[1],
+                "blocks": 0,
+                "completed": 0,
+                "seconds": 0,
+            })
+            entry["blocks"] += 1
+            if row["status"] == "completed":
+                entry["completed"] += 1
+                entry["seconds"] += int(row["elapsed_seconds"])
+        summary: dict[str, Any] = {
+            "week_start": start.isoformat(timespec="minutes"),
+            "week_end": end.isoformat(timespec="minutes"),
+            "seconds": sum(int(row["elapsed_seconds"]) for row in completed),
+            "blocks": len(work),
+            "completed": len(completed),
+            "early_finished": len(early),
+            "abandoned": len([row for row in work if row["status"] == "abandoned"]),
+            "sessions": list(sessions.values()),
+        }
+        if include_activity:
+            labels: dict[str, int] = {}
+            # Break work never contributes activity seconds.
+            for row in work:
+                for interval in self.activity_for(row["id"]):
+                    label = (interval.get("annotation") or "").strip() or interval.get("classification") or "unlabelled"
+                    labels[label] = labels.get(label, 0) + int(round(interval["ended_at"] - interval["started_at"]))
+            summary["activity_seconds"] = labels
+        return summary
 
     def export(self, limit: int | None = None, include_activity: bool = False) -> list[dict[str, Any]]:
         sql = "SELECT * FROM sessions ORDER BY started_at DESC"

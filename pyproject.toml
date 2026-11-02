@@ -28,7 +28,9 @@ Issues = "https://github.com/SaroashDS/Breadcrumbs/issues"
 Changelog = "https://github.com/SaroashDS/Breadcrumbs/releases"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+# Windows has no system IANA database; zoneinfo needs tzdata for the
+# America/New_York DST fixtures. Linux/macOS resolve zones from the OS.
+dev = ["pytest>=8.0", "tzdata; platform_system == 'Windows'"]
 
 [project.scripts]
 breadcrumbs = "breadcrumbs.__main__:main"
