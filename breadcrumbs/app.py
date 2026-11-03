@@ -31,6 +31,14 @@ from .widgets import CommandBar, GoalEditor, PixelProgress, ReadingCard, MiniTra
 from .branding import BreadcrumbsMark
 
 
+def _clock_text(seconds: float) -> str:
+    """mm:ss (or h:mm:ss) text matching the timer clock format."""
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
 class BreadcrumbsApp(App[None]):
     TITLE = "Breadcrumbs"
     CSS = """
@@ -117,6 +125,7 @@ class BreadcrumbsApp(App[None]):
         ("space", "toggle", "Start/Pause"),
         ("r", "reset", "Reset"),
         ("f", "finish", "Finish early"),
+        ("s", "skip_break", "Skip break & bank"),
         ("p", "presets", "Presets"),
         ("m", "pet", "Pet"),
         ("n", "spawn_pet", "New pet"),
@@ -148,6 +157,7 @@ class BreadcrumbsApp(App[None]):
         remembered = self.database.current_session() if session_name is None and resume_name is None else None
         if remembered:
             self._session_root, self.session_name = remembered
+        self.banked_seconds = self.database.break_bank(self._session_root)
         self._start_new_requested = session_name is not None
         self.resume_name = resume_name
         self.resume_hint: str | None = None
@@ -277,6 +287,7 @@ class BreadcrumbsApp(App[None]):
                 self.database.remember_session(None)
                 self.session_name = self.database.new_session_name()
                 self._home_query("#session-name", Input).value = self.session_name
+                self._reload_break_bank()
             return
         rows = self.database.recoverable(name)
         if not rows:
@@ -299,6 +310,7 @@ class BreadcrumbsApp(App[None]):
         self.active_session_id = row["id"]
         self._session_root, self.session_name = self.database.session_identity(row["id"])
         self.database.remember_session(self._session_root)
+        self._reload_break_bank()
         self._goal_text = row["goal"]
         self._home_query("#session-name", Input).value = self.session_name
         self._home_query("#goal-input", GoalEditor).load_text(row["goal"] or GoalEditor.DEFAULT_TEXT)
@@ -338,6 +350,10 @@ class BreadcrumbsApp(App[None]):
                 self.timer.status.value, self._goal_text,
             )
         self._last_checkpoint = time.monotonic()
+
+    def _reload_break_bank(self) -> None:
+        """Mirror the named session's banked break time from the database."""
+        self.banked_seconds = self.database.break_bank(self._session_root)
 
     def _scope_snapshot(self):
         settings = self._tracking_settings
@@ -522,6 +538,7 @@ class BreadcrumbsApp(App[None]):
             self.database.remember_session(None)
             self.session_name = self.database.new_session_name()
             self._home_query("#session-name", Input).value = self.session_name
+            self._reload_break_bank()
             self._configure(TimerKind.FOCUS)
             self.notify("New session. Give it a name or keep this one.")
         if self.active_session_id is not None:
@@ -571,8 +588,17 @@ class BreadcrumbsApp(App[None]):
                     raw_name = self._home_query("#session-name", Input).value.strip()
                     chosen = normalize_name(raw_name) if raw_name else self.session_name
                     root = self._session_root if chosen == self.session_name else None
+                    planned_seconds = self.timer.duration_seconds
+                    bank_spend = 0
+                    if self.timer.kind in (TimerKind.SHORT_BREAK, TimerKind.LONG_BREAK):
+                        bank_spend = max(0, self.timer.duration_seconds - self._duration_for(self.timer.kind))
+                        if root is None and bank_spend:
+                            # A new named session cannot use the old session's credit.
+                            planned_seconds = self._duration_for(self.timer.kind)
+                            bank_spend = 0
                     self.active_session_id = self.database.begin_session(
-                        self.timer.kind.value, self.timer.duration_seconds, goal, chosen, session_root=root
+                        self.timer.kind.value, planned_seconds, goal, chosen, session_root=root,
+                        break_bank_seconds=bank_spend
                     )
                     self._session_root, self.session_name = self.database.session_identity(self.active_session_id)
                     self.database.remember_session(self._session_root)
@@ -583,6 +609,9 @@ class BreadcrumbsApp(App[None]):
                 except sqlite3.IntegrityError:
                     self.notify("That session name is already used. Choose another name.", severity="error")
                     return
+                if planned_seconds != self.timer.duration_seconds:
+                    self.timer.configure(planned_seconds, self.timer.kind)
+                self._reload_break_bank()
             self.timer.start()
         elif self.timer.status is TimerStatus.RUNNING:
             self.timer.pause()
@@ -600,6 +629,21 @@ class BreadcrumbsApp(App[None]):
                 lambda: self._configure(self.timer.kind, self.timer.duration_seconds),
                 "finish this block",
             )
+
+    def action_skip_break(self) -> None:
+        """Bank a due break's time for a combined break after the next work stretch."""
+        if self.screen is not self._home_screen:
+            return
+        if (self.timer.kind not in (TimerKind.SHORT_BREAK, TimerKind.LONG_BREAK)
+                or self.timer.status is not TimerStatus.READY
+                or self._session_root is None):
+            return
+        # A combined offer already includes the bank; only the new break is credit.
+        credit = min(self.timer.duration_seconds, self._duration_for(self.timer.kind))
+        self.banked_seconds = self.database.bank_break(self._session_root, credit)
+        self._select(TimerKind.FOCUS)
+        self.notify(f"Break banked · {_clock_text(self.banked_seconds)} saved for a later break",
+                    title="BREAK BANK")
 
     def _request_change(self, continuation, target: str) -> None:
         if self._decision_open:
@@ -842,7 +886,10 @@ class BreadcrumbsApp(App[None]):
             continuation()
             self._refresh_history()
             return
-        self._select(next_kind)
+        duration = self._duration_for(next_kind)
+        if self.banked_seconds:
+            duration += self.banked_seconds  # offer the banked time as a combined break
+        self._select(next_kind, duration)
         self._refresh_history()
         if self.settings.auto_start_breaks:
             self.action_toggle()
@@ -896,6 +943,21 @@ class BreadcrumbsApp(App[None]):
             break_hint = "Long break ready · you've finished this round"
         else:
             break_hint = f"{left} full focus {'block' if left == 1 else 'blocks'} until a long break"
+        if self.banked_seconds:
+            is_break = self.timer.kind in (TimerKind.SHORT_BREAK, TimerKind.LONG_BREAK)
+            normal = self._duration_for(self.timer.kind)
+            banked_extra = self.timer.duration_seconds - normal
+            if is_break and banked_extra > 0:
+                if self.timer.status is TimerStatus.READY:
+                    break_hint = (f"Combined break {_clock_text(self.timer.duration_seconds)} = "
+                                  f"{_clock_text(normal)} break + {_clock_text(banked_extra)} banked"
+                                  " · S skip & bank")
+                else:
+                    break_hint = f"Combined break · {_clock_text(banked_extra)} banked time included"
+            else:
+                break_hint += f" · break bank {_clock_text(self.banked_seconds)}"
+                if is_break and self.timer.status is TimerStatus.READY:
+                    break_hint += " · S skip & bank"
         self._home_query("#break-progress", Static).update(break_hint)
         self._refresh_activity_bar()
         self._home_query("#mascot", PixelMascot).set_state(self.timer.status, is_break)
